@@ -112,6 +112,15 @@ impl winit::application::ApplicationHandler<()> for App {
                 queue.submit(Some(encoder.finish()));
                 frame.present();
             }
+            WindowEvent::Resized(size) => {
+                if let Some(config) = &mut self.config {
+                    config.width = size.width;
+                    config.height = size.height;
+                    if let Some(surface) = &self.surface {
+                        surface.configure(self.device.as_ref().unwrap(), config);
+                    }
+                }
+            }
             WindowEvent::CloseRequested => std::process::exit(0),
             _ => {}
         }
