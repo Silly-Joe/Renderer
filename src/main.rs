@@ -75,47 +75,45 @@ impl winit::application::ApplicationHandler<()> for App {
         _window_id: winit::window::WindowId,
         event: WindowEvent,
     ) {
-        if self.window.is_some() {
-            match event {
-                WindowEvent::RedrawRequested => {
-                    let surface = self.surface.as_ref().unwrap();
-                    let device = self.device.as_ref().unwrap();
-                    let queue = self.queue.as_ref().unwrap();
+        if self.window.is_none() {
+            return;
+        }
+        match event {
+            WindowEvent::RedrawRequested => {
+                let surface = self.surface.as_ref().expect("Surface not initialized");
+                let device = self.device.as_ref().expect("Device not initialized");
+                let queue = self.queue.as_ref().expect("Queue not initialized");
+                let frame = surface
+                    .get_current_texture()
+                    .expect("Failed to get frame texture");
+                let view = frame
+                    .texture
+                    .create_view(&wgpu::TextureViewDescriptor::default());
+                let mut encoder = device.create_command_encoder(&wgpu::CommandEncoderDescriptor {
+                    label: Some("Render Encoder"),
+                });
 
-                    let frame = surface.get_current_texture().unwrap();
-                    let view = frame
-                        .texture
-                        .create_view(&wgpu::TextureViewDescriptor::default());
+                encoder.begin_render_pass(&wgpu::RenderPassDescriptor {
+                    label: Some("Render Pass"),
+                    color_attachments: &[Some(wgpu::RenderPassColorAttachment {
+                        view: &view,
+                        resolve_target: None,
+                        ops: wgpu::Operations {
+                            load: wgpu::LoadOp::Clear(wgpu::Color::GREEN),
+                            store: wgpu::StoreOp::Store,
+                        },
+                        depth_slice: None,
+                    })],
+                    depth_stencil_attachment: None,
+                    timestamp_writes: None,
+                    occlusion_query_set: None,
+                });
 
-                    let mut encoder =
-                        device.create_command_encoder(&wgpu::CommandEncoderDescriptor {
-                            label: Some("Render Encoder"),
-                        });
-
-                    {
-                        let _render_pass = encoder.begin_render_pass(&wgpu::RenderPassDescriptor {
-                            label: Some("Render Pass"),
-                            color_attachments: &[Some(wgpu::RenderPassColorAttachment {
-                                view: &view,
-                                resolve_target: None,
-                                ops: wgpu::Operations {
-                                    load: wgpu::LoadOp::Clear(wgpu::Color::GREEN),
-                                    store: wgpu::StoreOp::Store,
-                                },
-                                depth_slice: None,
-                            })],
-                            depth_stencil_attachment: None,
-                            timestamp_writes: None,
-                            occlusion_query_set: None,
-                        });
-                    }
-
-                    queue.submit(Some(encoder.finish()));
-                    frame.present();
-                }
-                WindowEvent::CloseRequested => std::process::exit(0),
-                _ => {}
+                queue.submit(Some(encoder.finish()));
+                frame.present();
             }
+            WindowEvent::CloseRequested => std::process::exit(0),
+            _ => {}
         }
     }
 
