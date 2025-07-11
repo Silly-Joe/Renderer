@@ -1,3 +1,137 @@
+use std::sync::Arc;
+
+use winit::{
+    event::*,
+    event_loop::EventLoop,
+    window::{Window, WindowAttributes},
+};
+
+#[derive(Default)]
+struct App {
+    window: Option<Arc<Window>>,
+    surface: Option<wgpu::Surface<'static>>,
+    adapter: Option<wgpu::Adapter>,
+    device: Option<wgpu::Device>,
+    queue: Option<wgpu::Queue>,
+    config: Option<wgpu::SurfaceConfiguration>,
+    instance: Option<wgpu::Instance>,
+}
+
+impl winit::application::ApplicationHandler<()> for App {
+    fn resumed(&mut self, event_loop: &winit::event_loop::ActiveEventLoop) {
+        if self.window.is_none() {
+            let instance = wgpu::Instance::default();
+
+            let window = Arc::new(
+                event_loop
+                    .create_window(WindowAttributes::default().with_title("Renderer"))
+                    .expect("Failed to create window"),
+            );
+
+            self.window = Some(window.clone());
+
+            let window_size = window.inner_size();
+
+            let surface = instance
+                .create_surface(window)
+                .expect("Failed to create surface");
+
+            let adapter =
+                pollster::block_on(instance.request_adapter(&wgpu::RequestAdapterOptions {
+                    compatible_surface: Some(&surface),
+                    ..Default::default()
+                }))
+                .expect("Failed to request adapter");
+
+            let (device, queue) =
+                pollster::block_on(adapter.request_device(&wgpu::DeviceDescriptor::default()))
+                    .expect("Failed to request device");
+
+            let config = wgpu::SurfaceConfiguration {
+                usage: wgpu::TextureUsages::RENDER_ATTACHMENT,
+                format: surface.get_capabilities(&adapter).formats[0],
+                width: window_size.width,
+                height: window_size.height,
+                present_mode: wgpu::PresentMode::Fifo,
+                alpha_mode: wgpu::CompositeAlphaMode::Opaque,
+                view_formats: vec![],
+                desired_maximum_frame_latency: 1,
+            };
+
+            surface.configure(&device, &config);
+
+            self.surface = Some(surface);
+            self.adapter = Some(adapter);
+            self.device = Some(device);
+            self.queue = Some(queue);
+            self.config = Some(config);
+            self.instance = Some(instance);
+        }
+    }
+
+    fn window_event(
+        &mut self,
+        _event_loop: &winit::event_loop::ActiveEventLoop,
+        _window_id: winit::window::WindowId,
+        event: WindowEvent,
+    ) {
+        if self.window.is_some() {
+            match event {
+                WindowEvent::RedrawRequested => {
+                    let surface = self.surface.as_ref().unwrap();
+                    let device = self.device.as_ref().unwrap();
+                    let queue = self.queue.as_ref().unwrap();
+
+                    let frame = surface.get_current_texture().unwrap();
+                    let view = frame
+                        .texture
+                        .create_view(&wgpu::TextureViewDescriptor::default());
+
+                    let mut encoder =
+                        device.create_command_encoder(&wgpu::CommandEncoderDescriptor {
+                            label: Some("Render Encoder"),
+                        });
+
+                    {
+                        let _render_pass = encoder.begin_render_pass(&wgpu::RenderPassDescriptor {
+                            label: Some("Render Pass"),
+                            color_attachments: &[Some(wgpu::RenderPassColorAttachment {
+                                view: &view,
+                                resolve_target: None,
+                                ops: wgpu::Operations {
+                                    load: wgpu::LoadOp::Clear(wgpu::Color::GREEN),
+                                    store: wgpu::StoreOp::Store,
+                                },
+                                depth_slice: None,
+                            })],
+                            depth_stencil_attachment: None,
+                            timestamp_writes: None,
+                            occlusion_query_set: None,
+                        });
+                    }
+
+                    queue.submit(Some(encoder.finish()));
+                    frame.present();
+                }
+                WindowEvent::CloseRequested => std::process::exit(0),
+                _ => {}
+            }
+        }
+    }
+
+    fn about_to_wait(&mut self, _event_loop: &winit::event_loop::ActiveEventLoop) {
+        if let Some(window) = &self.window {
+            window.request_redraw();
+        }
+    }
+}
+
+async fn run() {
+    let event_loop = EventLoop::new().unwrap();
+    let mut app = App::default();
+    event_loop.run_app(&mut app).unwrap();
+}
+
 fn main() {
-    println!("Hello, world!");
+    pollster::block_on(run());
 }
