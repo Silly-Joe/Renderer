@@ -8,7 +8,10 @@
       "program": "${workspaceFolder}/target/debug/${workspaceFolderBasename}",
       "args": [],
       "cwd": "${workspaceFolder}",
-      "preLaunchTask": "cargo build (debug)"
+      "preLaunchTask": "cargo build (debug)",
+      "env": {
+        "RUST_BACKTRACE": "1"
+      }
     },
     {
       "name": "Debug (release build)",
@@ -17,7 +20,10 @@
       "program": "${workspaceFolder}/target/release/${workspaceFolderBasename}",
       "args": [],
       "cwd": "${workspaceFolder}",
-      "preLaunchTask": "cargo build (release)"
+      "preLaunchTask": "cargo build (release)",
+      "env": {
+        "RUST_BACKTRACE": "1"
+      }
     }
   ]
 }
