@@ -18,6 +18,54 @@ struct App {
 }
 
 impl App {
+    fn initialize(&mut self, event_loop: &winit::event_loop::ActiveEventLoop) {
+        let instance = wgpu::Instance::default();
+
+        let window = Arc::new(
+            event_loop
+                .create_window(WindowAttributes::default().with_title("Renderer"))
+                .expect("Failed to create window"),
+        );
+
+        self.window = Some(window.clone());
+
+        let window_size = window.inner_size();
+
+        let surface = instance
+            .create_surface(window)
+            .expect("Failed to create surface");
+
+        let adapter = pollster::block_on(instance.request_adapter(&wgpu::RequestAdapterOptions {
+            compatible_surface: Some(&surface),
+            ..Default::default()
+        }))
+        .expect("Failed to request adapter");
+
+        let (device, queue) =
+            pollster::block_on(adapter.request_device(&wgpu::DeviceDescriptor::default()))
+                .expect("Failed to request device");
+
+        let config = wgpu::SurfaceConfiguration {
+            usage: wgpu::TextureUsages::RENDER_ATTACHMENT,
+            format: surface.get_capabilities(&adapter).formats[0],
+            width: window_size.width,
+            height: window_size.height,
+            present_mode: wgpu::PresentMode::Fifo,
+            alpha_mode: wgpu::CompositeAlphaMode::Opaque,
+            view_formats: vec![],
+            desired_maximum_frame_latency: 1,
+        };
+
+        surface.configure(&device, &config);
+
+        self.surface = Some(surface);
+        self.adapter = Some(adapter);
+        self.device = Some(device);
+        self.queue = Some(queue);
+        self.config = Some(config);
+        self.instance = Some(instance);
+    }
+
     fn is_visible(&self) -> bool {
         match self.config {
             Some(ref config) => config.width != 0 && config.height != 0,
@@ -63,52 +111,7 @@ impl App {
 impl winit::application::ApplicationHandler<()> for App {
     fn resumed(&mut self, event_loop: &winit::event_loop::ActiveEventLoop) {
         if self.window.is_none() {
-            let instance = wgpu::Instance::default();
-
-            let window = Arc::new(
-                event_loop
-                    .create_window(WindowAttributes::default().with_title("Renderer"))
-                    .expect("Failed to create window"),
-            );
-
-            self.window = Some(window.clone());
-
-            let window_size = window.inner_size();
-
-            let surface = instance
-                .create_surface(window)
-                .expect("Failed to create surface");
-
-            let adapter =
-                pollster::block_on(instance.request_adapter(&wgpu::RequestAdapterOptions {
-                    compatible_surface: Some(&surface),
-                    ..Default::default()
-                }))
-                .expect("Failed to request adapter");
-
-            let (device, queue) =
-                pollster::block_on(adapter.request_device(&wgpu::DeviceDescriptor::default()))
-                    .expect("Failed to request device");
-
-            let config = wgpu::SurfaceConfiguration {
-                usage: wgpu::TextureUsages::RENDER_ATTACHMENT,
-                format: surface.get_capabilities(&adapter).formats[0],
-                width: window_size.width,
-                height: window_size.height,
-                present_mode: wgpu::PresentMode::Fifo,
-                alpha_mode: wgpu::CompositeAlphaMode::Opaque,
-                view_formats: vec![],
-                desired_maximum_frame_latency: 1,
-            };
-
-            surface.configure(&device, &config);
-
-            self.surface = Some(surface);
-            self.adapter = Some(adapter);
-            self.device = Some(device);
-            self.queue = Some(queue);
-            self.config = Some(config);
-            self.instance = Some(instance);
+            self.initialize(event_loop);
         }
     }
 
