@@ -17,6 +17,49 @@ struct App {
     instance: Option<wgpu::Instance>,
 }
 
+impl App {
+    fn is_visible(&self) -> bool {
+        match self.config {
+            Some(ref config) => config.width != 0 && config.height != 0,
+            None => false,
+        }
+    }
+
+    fn render(&self) {
+        let surface = self.surface.as_ref().expect("Surface not initialized");
+        let device = self.device.as_ref().expect("Device not initialized");
+        let queue = self.queue.as_ref().expect("Queue not initialized");
+        let frame = surface
+            .get_current_texture()
+            .expect("Failed to get frame texture");
+        let view = frame
+            .texture
+            .create_view(&wgpu::TextureViewDescriptor::default());
+        let mut encoder = device.create_command_encoder(&wgpu::CommandEncoderDescriptor {
+            label: Some("Render Encoder"),
+        });
+
+        encoder.begin_render_pass(&wgpu::RenderPassDescriptor {
+            label: Some("Render Pass"),
+            color_attachments: &[Some(wgpu::RenderPassColorAttachment {
+                view: &view,
+                resolve_target: None,
+                ops: wgpu::Operations {
+                    load: wgpu::LoadOp::Clear(wgpu::Color::GREEN),
+                    store: wgpu::StoreOp::Store,
+                },
+                depth_slice: None,
+            })],
+            depth_stencil_attachment: None,
+            timestamp_writes: None,
+            occlusion_query_set: None,
+        });
+
+        queue.submit(Some(encoder.finish()));
+        frame.present();
+    }
+}
+
 impl winit::application::ApplicationHandler<()> for App {
     fn resumed(&mut self, event_loop: &winit::event_loop::ActiveEventLoop) {
         if self.window.is_none() {
@@ -80,46 +123,25 @@ impl winit::application::ApplicationHandler<()> for App {
         }
         match event {
             WindowEvent::RedrawRequested => {
-                let surface = self.surface.as_ref().expect("Surface not initialized");
-                let device = self.device.as_ref().expect("Device not initialized");
-                let queue = self.queue.as_ref().expect("Queue not initialized");
-                let frame = surface
-                    .get_current_texture()
-                    .expect("Failed to get frame texture");
-                let view = frame
-                    .texture
-                    .create_view(&wgpu::TextureViewDescriptor::default());
-                let mut encoder = device.create_command_encoder(&wgpu::CommandEncoderDescriptor {
-                    label: Some("Render Encoder"),
-                });
-
-                encoder.begin_render_pass(&wgpu::RenderPassDescriptor {
-                    label: Some("Render Pass"),
-                    color_attachments: &[Some(wgpu::RenderPassColorAttachment {
-                        view: &view,
-                        resolve_target: None,
-                        ops: wgpu::Operations {
-                            load: wgpu::LoadOp::Clear(wgpu::Color::GREEN),
-                            store: wgpu::StoreOp::Store,
-                        },
-                        depth_slice: None,
-                    })],
-                    depth_stencil_attachment: None,
-                    timestamp_writes: None,
-                    occlusion_query_set: None,
-                });
-
-                queue.submit(Some(encoder.finish()));
-                frame.present();
+                if !self.is_visible() {
+                    return;
+                }
+                self.render();
             }
             WindowEvent::Resized(size) => {
-                if let Some(config) = &mut self.config {
-                    config.width = size.width;
-                    config.height = size.height;
-                    if let Some(surface) = &self.surface {
-                        surface.configure(self.device.as_ref().unwrap(), config);
-                    }
+                let config = self.config.as_mut().expect("Config not initialized");
+                config.width = size.width;
+                config.height = size.height;
+
+                if size.width == 0 || size.height == 0 {
+                    return; // Ignore zero-sized windows
                 }
+
+                let surface = self.surface.as_ref().expect("Surface not initialized");
+                surface.configure(
+                    self.device.as_ref().expect("Device not initialized"),
+                    config,
+                );
             }
             WindowEvent::CloseRequested => std::process::exit(0),
             _ => {}
