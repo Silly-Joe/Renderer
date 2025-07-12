@@ -134,13 +134,13 @@ impl App {
     fn init_vetex_buffer_with_data(&mut self) {
         let vertices = [
             Vertex {
-                position: [-0.5, -0.5],
+                position: [-0.5, -0.5, 1.0],
             },
             Vertex {
-                position: [0.5, -0.5],
+                position: [0.5, -0.5, 1.0],
             },
             Vertex {
-                position: [0.0, 0.5],
+                position: [0.0, 0.5, 1.0],
             },
         ];
 
