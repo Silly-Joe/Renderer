@@ -298,10 +298,10 @@ impl App {
         match key {
             KeyCode::Escape => std::process::exit(0),
             KeyCode::KeyW => {
-                self.camera.translate(Vec3::new(0.0, 0.0, 0.1));
+                self.camera.translate(Vec3::new(0.0, 0.0, -0.1));
             }
             KeyCode::KeyS => {
-                self.camera.translate(Vec3::new(0.0, 0.0, -0.1));
+                self.camera.translate(Vec3::new(0.0, 0.0, 0.1));
             }
             KeyCode::KeyA => {
                 self.camera.translate(Vec3::new(-0.1, 0.0, 0.0));

@@ -41,14 +41,12 @@ impl Camera {
     }
 
     pub fn translate(&mut self, translation: Vec3) {
-        self.translation += translation;
+        // Translate immer in richtung der Kamera
+        self.translation += self.rotation * translation;
     }
 
     pub fn rotate(&mut self, rotation: Quat) {
+        // Rotation um die Kamera-Achse
         self.rotation = rotation * self.rotation;
-    }
-
-    pub fn scale(&mut self, scale: Vec3) {
-        self.scale *= scale;
     }
 }
