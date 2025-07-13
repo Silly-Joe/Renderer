@@ -1,12 +1,19 @@
+mod camera;
 mod vertex;
+
+use camera::Camera;
+use glam::Quat;
+use glam::Vec3;
 use vertex::Vertex;
 
 use std::sync::Arc;
 
 use wgpu::util::DeviceExt;
+
 use winit::{
     event::*,
     event_loop::EventLoop,
+    keyboard::{KeyCode, PhysicalKey},
     window::{Window, WindowAttributes},
 };
 
@@ -21,10 +28,14 @@ struct App {
     instance: Option<wgpu::Instance>,
     render_pipeline: Option<wgpu::RenderPipeline>,
     vertex_buffer: Option<wgpu::Buffer>,
+    uniform_buffer: Option<wgpu::Buffer>,
+    uniform_bind_group: Option<wgpu::BindGroup>,
+    uniform_bind_group_layout: Option<wgpu::BindGroupLayout>,
+    camera: Camera,
 }
 
 impl App {
-    fn initialize_window_and_surface(&mut self, event_loop: &winit::event_loop::ActiveEventLoop) {
+    fn init_window_and_surface(&mut self, event_loop: &winit::event_loop::ActiveEventLoop) {
         let instance = wgpu::Instance::default();
 
         let window = Arc::new(
@@ -72,14 +83,17 @@ impl App {
         self.instance = Some(instance);
     }
 
-    fn initialize_pipeline(&mut self) {
+    fn init_pipeline(&mut self) {
         let pipeline_layout = self
             .device
             .as_ref()
             .expect("Device not initialized")
             .create_pipeline_layout(&wgpu::PipelineLayoutDescriptor {
                 label: Some("Pipeline Layout"),
-                bind_group_layouts: &[],
+                bind_group_layouts: &[self
+                    .uniform_bind_group_layout
+                    .as_ref()
+                    .expect("Uniform Bind Group Layout not initialized")],
                 push_constant_ranges: &[],
             });
 
@@ -157,6 +171,56 @@ impl App {
         self.vertex_buffer = Some(vertex_buffer);
     }
 
+    fn init_uniform_buffer_with_data(&mut self) {
+        let camera_data = self.camera.projection_matrix().to_cols_array_2d();
+        let uniform_buffer = self
+            .device
+            .as_ref()
+            .expect("Device not initialized")
+            .create_buffer_init(&wgpu::util::BufferInitDescriptor {
+                label: Some("Uniform Buffer"),
+                contents: bytemuck::cast_slice(&camera_data),
+                usage: wgpu::BufferUsages::UNIFORM | wgpu::BufferUsages::COPY_DST,
+            });
+
+        self.uniform_buffer = Some(uniform_buffer);
+    }
+
+    fn init_bind_group_layout(&mut self) {
+        let device = self.device.as_ref().expect("Device not initialized");
+
+        let uniform_bind_group_layout =
+            device.create_bind_group_layout(&wgpu::BindGroupLayoutDescriptor {
+                label: Some("Uniform Bind Group Layout"),
+                entries: &[wgpu::BindGroupLayoutEntry {
+                    binding: 0,
+                    visibility: wgpu::ShaderStages::VERTEX,
+                    ty: wgpu::BindingType::Buffer {
+                        ty: wgpu::BufferBindingType::Uniform,
+                        has_dynamic_offset: false,
+                        min_binding_size: None,
+                    },
+                    count: None,
+                }],
+            });
+
+        let uniform_bind_group = device.create_bind_group(&wgpu::BindGroupDescriptor {
+            label: Some("Uniform Bind Group"),
+            layout: &uniform_bind_group_layout,
+            entries: &[wgpu::BindGroupEntry {
+                binding: 0,
+                resource: self
+                    .uniform_buffer
+                    .as_ref()
+                    .expect("Uniform Buffer not initialized")
+                    .as_entire_binding(),
+            }],
+        });
+
+        self.uniform_bind_group_layout = Some(uniform_bind_group_layout);
+        self.uniform_bind_group = Some(uniform_bind_group);
+    }
+
     fn render(&self) {
         let surface = self.surface.as_ref().expect("Surface not initialized");
         let device = self.device.as_ref().expect("Device not initialized");
@@ -205,21 +269,65 @@ impl App {
                     .slice(..),
             );
 
+            render_pass.set_bind_group(
+                0,
+                self.uniform_bind_group
+                    .as_ref()
+                    .expect("Uniform Bind Group not initialized"),
+                &[],
+            );
+
             render_pass.draw(0..3, 0..1); // 3 Vertices, 1 Instanz
         }
+
+        // Kamera setzen
+        queue.write_buffer(
+            self.uniform_buffer
+                .as_ref()
+                .expect("Uniform Buffer not initialized"),
+            0,
+            bytemuck::cast_slice(&self.camera.view_projection_matrix().to_cols_array_2d()),
+        );
 
         queue.submit(std::iter::once(encoder.finish()));
 
         frame.present();
+    }
+
+    fn keyboard_input(&mut self, key: KeyCode) {
+        match key {
+            KeyCode::Escape => std::process::exit(0),
+            KeyCode::KeyW => {
+                self.camera.translate(Vec3::new(0.0, 0.0, 0.1));
+            }
+            KeyCode::KeyS => {
+                self.camera.translate(Vec3::new(0.0, 0.0, -0.1));
+            }
+            KeyCode::KeyA => {
+                self.camera.translate(Vec3::new(-0.1, 0.0, 0.0));
+            }
+            KeyCode::KeyD => {
+                self.camera.translate(Vec3::new(0.1, 0.0, 0.0));
+            }
+            KeyCode::KeyQ => {
+                self.camera.rotate(Quat::from_rotation_y(0.1));
+            }
+            KeyCode::KeyE => {
+                self.camera.rotate(Quat::from_rotation_y(-0.1));
+            }
+            _ => {}
+        }
     }
 }
 
 impl winit::application::ApplicationHandler<()> for App {
     fn resumed(&mut self, event_loop: &winit::event_loop::ActiveEventLoop) {
         if self.window.is_none() {
-            self.initialize_window_and_surface(event_loop);
-            self.initialize_pipeline();
+            self.init_window_and_surface(event_loop);
             self.init_vetex_buffer_with_data();
+            self.init_uniform_buffer_with_data();
+            self.init_bind_group_layout();
+            self.init_pipeline();
         }
     }
 
@@ -255,6 +363,11 @@ impl winit::application::ApplicationHandler<()> for App {
                 );
             }
             WindowEvent::CloseRequested => std::process::exit(0),
+            WindowEvent::KeyboardInput { event, .. } => {
+                if let PhysicalKey::Code(code) = event.physical_key {
+                    self.keyboard_input(code);
+                }
+            }
             _ => {}
         }
     }
