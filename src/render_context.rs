@@ -1,5 +1,6 @@
 use crate::Camera;
 use crate::vertex::Vertex;
+use glam::Mat4;
 use std::sync::Arc;
 use wgpu::util::DeviceExt;
 use winit::window::Window;
@@ -16,7 +17,7 @@ pub struct RenderContext {
 }
 
 impl RenderContext {
-    pub fn new(window: &'static Window, camera: &Camera) -> Self {
+    pub fn new(window: &'static Window) -> Self {
         let window_size = window.inner_size();
 
         let instance = wgpu::Instance::default();
@@ -50,11 +51,11 @@ impl RenderContext {
 
         surface.configure(&device, &config);
 
-        let camera_data = camera.projection_matrix().to_cols_array_2d();
-        let uniform_buffer = device.create_buffer_init(&wgpu::util::BufferInitDescriptor {
+        let uniform_buffer = device.create_buffer(&wgpu::BufferDescriptor {
             label: Some("Uniform Buffer"),
-            contents: bytemuck::cast_slice(&camera_data),
+            size: std::mem::size_of::<Mat4>() as wgpu::BufferAddress,
             usage: wgpu::BufferUsages::UNIFORM | wgpu::BufferUsages::COPY_DST,
+            mapped_at_creation: false,
         });
 
         let uniform_bind_group_layout =
@@ -194,11 +195,16 @@ impl RenderContext {
             render_pass.draw(0..3, 0..1); // 3 Vertices, 1 Instanz
         }
 
-        // Kamera setzen
+        let aspect_ratio = self.config.width as f32 / self.config.height as f32;
+
         self.queue.write_buffer(
             &self.uniform_buffer,
             0,
-            bytemuck::cast_slice(&camera.view_projection_matrix().to_cols_array_2d()),
+            bytemuck::cast_slice(
+                &camera
+                    .view_projection_matrix(aspect_ratio)
+                    .to_cols_array_2d(),
+            ),
         );
 
         self.queue.submit(std::iter::once(encoder.finish()));

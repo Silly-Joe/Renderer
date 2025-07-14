@@ -57,7 +57,7 @@ impl winit::application::ApplicationHandler<()> for App {
                     .unwrap(),
             ));
 
-            let render_context = RenderContext::new(window, &self.camera);
+            let render_context = RenderContext::new(window);
             self.window = Some(window);
             self.render_context = Some(render_context);
         }
