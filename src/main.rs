@@ -1,4 +1,6 @@
+mod buffer_set;
 mod camera;
+mod mesh;
 mod render_context;
 mod vertex;
 
@@ -19,6 +21,7 @@ struct App {
     window: Option<&'static Window>,
     render_context: Option<RenderContext>,
     camera: Camera,
+    meshes: Vec<mesh::Mesh>,
 }
 
 impl App {
@@ -45,6 +48,11 @@ impl App {
             }
             _ => {}
         }
+    }
+
+    fn add_mesh(&mut self, vertices: Vec<vertex::Vertex>, indices: Vec<u16>) {
+        let mesh = mesh::Mesh::new(vertices, indices);
+        self.meshes.push(mesh);
     }
 }
 
@@ -74,10 +82,12 @@ impl winit::application::ApplicationHandler<()> for App {
         }
         match event {
             WindowEvent::RedrawRequested => {
-                self.render_context
-                    .as_mut()
-                    .expect("Render Context not initialized")
-                    .render(&self.camera);
+                for mesh in &self.meshes {
+                    self.render_context
+                        .as_mut()
+                        .expect("Render Context not initialized")
+                        .render(&self.camera, mesh);
+                }
             }
             WindowEvent::Resized(size) => {
                 self.render_context
@@ -105,6 +115,36 @@ impl winit::application::ApplicationHandler<()> for App {
 async fn run() {
     let event_loop = EventLoop::new().unwrap();
     let mut app = App::default();
+    app.add_mesh(
+        vec![
+            vertex::Vertex {
+                position: [-0.5, -0.5, 1.0],
+            },
+            vertex::Vertex {
+                position: [0.5, -0.5, 1.0],
+            },
+            vertex::Vertex {
+                position: [0.0, 0.5, 1.0],
+            },
+        ],
+        vec![0, 1, 2],
+    );
+
+    app.add_mesh(
+        vec![
+            vertex::Vertex {
+                position: [1.5, -0.5, 1.0],
+            },
+            vertex::Vertex {
+                position: [2.5, -0.5, 1.0],
+            },
+            vertex::Vertex {
+                position: [2.0, 0.5, 1.0],
+            },
+        ],
+        vec![0, 1, 2],
+    );
+
     event_loop.run_app(&mut app).unwrap();
 }
 

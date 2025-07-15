@@ -9,3 +9,4 @@ glam = "0.30.4"
 winit = "0.30.11"
 pollster = "0.4.0"
 bytemuck = "1.23.1"
+uuid = { version = "1.4.0", features = ["v4"] }

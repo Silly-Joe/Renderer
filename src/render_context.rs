@@ -1,19 +1,23 @@
 use crate::Camera;
+use crate::buffer_set::BufferSet;
 use crate::vertex::Vertex;
+
+use crate::mesh::Mesh;
 use glam::Mat4;
+use std::collections::HashMap;
 use std::sync::Arc;
-use wgpu::util::DeviceExt;
+use uuid::Uuid;
 use winit::window::Window;
 
 pub struct RenderContext {
     surface: Arc<wgpu::Surface<'static>>,
+    surface_config: wgpu::SurfaceConfiguration,
     device: wgpu::Device,
     queue: wgpu::Queue,
-    config: wgpu::SurfaceConfiguration,
     render_pipeline: wgpu::RenderPipeline,
-    vertex_buffer: wgpu::Buffer,
     uniform_buffer: wgpu::Buffer,
     uniform_bind_group: wgpu::BindGroup,
+    buffer_sets: HashMap<Uuid, BufferSet>,
 }
 
 impl RenderContext {
@@ -119,45 +123,43 @@ impl RenderContext {
             cache: None,
         });
 
-        let vertices = [
-            Vertex {
-                position: [-0.5, -0.5, 1.0],
-            },
-            Vertex {
-                position: [0.5, -0.5, 1.0],
-            },
-            Vertex {
-                position: [0.0, 0.5, 1.0],
-            },
-        ];
-
-        let vertex_buffer = device.create_buffer_init(&wgpu::util::BufferInitDescriptor {
-            label: Some("Vertex Buffer"),
-            contents: bytemuck::cast_slice(&vertices),
-            usage: wgpu::BufferUsages::VERTEX,
-        });
-
         Self {
             surface,
             device,
             queue,
-            config,
+            surface_config: config,
             render_pipeline,
-            vertex_buffer,
             uniform_buffer,
             uniform_bind_group,
+            buffer_sets: HashMap::new(),
         }
     }
 
-    pub fn render(&self, camera: &Camera) {
-        if self.config.width == 0 || self.config.height == 0 {
+    pub fn register_mesh(&mut self, mesh: &Mesh) {
+        if self.buffer_sets.contains_key(&mesh.id()) {
+            return; // Mesh already registered
+        }
+
+        let buffer_set = mesh.buffer_set(&self.device);
+        self.buffer_sets.insert(mesh.id(), buffer_set);
+    }
+
+    pub fn render(&mut self, camera: &Camera, mesh: &Mesh) {
+        if !self.buffer_sets.contains_key(&mesh.id()) {
+            self.register_mesh(mesh);
+        }
+
+        if self.surface_config.width == 0 || self.surface_config.height == 0 {
             return;
         }
 
-        let frame = self
-            .surface
-            .get_current_texture()
-            .expect("Failed to get frame texture");
+        let frame = match self.surface.get_current_texture() {
+            Ok(f) => f,
+            Err(_) => {
+                eprintln!("Failed to acquire next surface texture");
+                return;
+            }
+        };
 
         let view = frame
             .texture
@@ -168,6 +170,18 @@ impl RenderContext {
             .create_command_encoder(&wgpu::CommandEncoderDescriptor {
                 label: Some("Render Encoder"),
             });
+
+        let aspect_ratio = self.surface_config.width as f32 / self.surface_config.height as f32;
+
+        self.queue.write_buffer(
+            &self.uniform_buffer,
+            0,
+            bytemuck::cast_slice(
+                &camera
+                    .view_projection_matrix(aspect_ratio)
+                    .to_cols_array_2d(),
+            ),
+        );
 
         {
             let mut render_pass = encoder.begin_render_pass(&wgpu::RenderPassDescriptor {
@@ -188,24 +202,18 @@ impl RenderContext {
 
             render_pass.set_pipeline(&self.render_pipeline);
 
-            render_pass.set_vertex_buffer(0, self.vertex_buffer.slice(..));
+            // Set vertex/index buffers
+            let buffer_set = self.buffer_sets.get(&mesh.id()).unwrap();
+            render_pass.set_vertex_buffer(0, buffer_set.vertex_buffer().slice(..));
+            render_pass.set_index_buffer(
+                buffer_set.index_buffer().slice(..),
+                wgpu::IndexFormat::Uint16,
+            );
 
             render_pass.set_bind_group(0, &self.uniform_bind_group, &[]);
 
-            render_pass.draw(0..3, 0..1); // 3 Vertices, 1 Instanz
+            render_pass.draw_indexed(0..mesh.index_count() as u32, 0, 0..1);
         }
-
-        let aspect_ratio = self.config.width as f32 / self.config.height as f32;
-
-        self.queue.write_buffer(
-            &self.uniform_buffer,
-            0,
-            bytemuck::cast_slice(
-                &camera
-                    .view_projection_matrix(aspect_ratio)
-                    .to_cols_array_2d(),
-            ),
-        );
 
         self.queue.submit(std::iter::once(encoder.finish()));
 
@@ -213,12 +221,12 @@ impl RenderContext {
     }
 
     pub fn resize(&mut self, width: u32, height: u32) {
-        self.config.width = width;
-        self.config.height = height;
+        self.surface_config.width = width;
+        self.surface_config.height = height;
 
         if width == 0 || height == 0 {
             return; // Ignore zero-sized windows
         }
-        self.surface.configure(&self.device, &self.config);
+        self.surface.configure(&self.device, &self.surface_config);
     }
 }
