@@ -82,12 +82,11 @@ impl winit::application::ApplicationHandler<()> for App {
         }
         match event {
             WindowEvent::RedrawRequested => {
-                for mesh in &self.meshes {
-                    self.render_context
-                        .as_mut()
-                        .expect("Render Context not initialized")
-                        .render(&self.camera, mesh);
-                }
+                let mesh_refs: Vec<&mesh::Mesh> = self.meshes.iter().collect();
+                self.render_context
+                    .as_mut()
+                    .expect("Render Context not initialized")
+                    .render(&self.camera, &mesh_refs);
             }
             WindowEvent::Resized(size) => {
                 self.render_context

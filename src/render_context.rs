@@ -144,35 +144,34 @@ impl RenderContext {
         self.buffer_sets.insert(mesh.id(), buffer_set);
     }
 
-    pub fn render(&mut self, camera: &Camera, mesh: &Mesh) {
-        if !self.buffer_sets.contains_key(&mesh.id()) {
-            self.register_mesh(mesh);
-        }
-
+    pub fn render(&mut self, camera: &Camera, meshes: &[&Mesh]) {
         if self.surface_config.width == 0 || self.surface_config.height == 0 {
             return;
         }
 
+        // 1. Frame holen
         let frame = match self.surface.get_current_texture() {
             Ok(f) => f,
-            Err(_) => {
-                eprintln!("Failed to acquire next surface texture");
+            Err(e) => {
+                eprintln!("Failed to acquire next surface texture: {:?}", e);
                 return;
             }
         };
 
+        // 2. View erstellen
         let view = frame
             .texture
             .create_view(&wgpu::TextureViewDescriptor::default());
 
+        // 3. CommandEncoder
         let mut encoder = self
             .device
             .create_command_encoder(&wgpu::CommandEncoderDescriptor {
                 label: Some("Render Encoder"),
             });
 
+        // 4. Camera-Uniforms schreiben
         let aspect_ratio = self.surface_config.width as f32 / self.surface_config.height as f32;
-
         self.queue.write_buffer(
             &self.uniform_buffer,
             0,
@@ -183,6 +182,7 @@ impl RenderContext {
             ),
         );
 
+        // 5. RenderPass starten
         {
             let mut render_pass = encoder.begin_render_pass(&wgpu::RenderPassDescriptor {
                 label: Some("Render Pass"),
@@ -201,23 +201,29 @@ impl RenderContext {
             });
 
             render_pass.set_pipeline(&self.render_pipeline);
-
-            // Set vertex/index buffers
-            let buffer_set = self.buffer_sets.get(&mesh.id()).unwrap();
-            render_pass.set_vertex_buffer(0, buffer_set.vertex_buffer().slice(..));
-            render_pass.set_index_buffer(
-                buffer_set.index_buffer().slice(..),
-                wgpu::IndexFormat::Uint16,
-            );
-
             render_pass.set_bind_group(0, &self.uniform_bind_group, &[]);
 
-            render_pass.draw_indexed(0..mesh.index_count() as u32, 0, 0..1);
+            // 6. Alle Meshes zeichnen
+            for mesh in meshes {
+                if !self.buffer_sets.contains_key(&mesh.id()) {
+                    self.register_mesh(mesh); // nur Buffers registrieren
+                }
+
+                let buffer_set = self.buffer_sets.get(&mesh.id()).unwrap();
+                render_pass.set_vertex_buffer(0, buffer_set.vertex_buffer().slice(..));
+                render_pass.set_index_buffer(
+                    buffer_set.index_buffer().slice(..),
+                    wgpu::IndexFormat::Uint16,
+                );
+                render_pass.draw_indexed(0..mesh.index_count() as u32, 0, 0..1);
+            }
         }
 
+        // 7. Submit
         self.queue.submit(std::iter::once(encoder.finish()));
 
-        frame.present();
+        // 8. Frame präsentieren
+        frame.present(); // unbedingt **nach** submit
     }
 
     pub fn resize(&mut self, width: u32, height: u32) {
